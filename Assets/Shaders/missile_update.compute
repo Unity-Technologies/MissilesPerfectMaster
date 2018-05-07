@@ -1,0 +1,141 @@
+﻿#pragma kernel missile_update
+
+#include "constant_values.cginc"
+#include "missile.cginc"
+
+RWStructuredBuffer<MissileData> cbuffer_missile;
+StructuredBuffer<TargetData> cbuffer_target;
+RWStructuredBuffer<int> cbuffer_missile_result;
+RWStructuredBuffer<float4> cbuffer_trail;
+RWStructuredBuffer<int> cbuffer_trail_index;
+StructuredBuffer<float4> cbuffer_frustum_planes;
+RWStructuredBuffer<SortData> cbuffer_missile_sort_key_list;
+float _DT;
+float _CurrentTime;
+float _MissileAlivePeriod;
+float _MissileAlivePeriodAfterTargetDeath;
+float _TrailRemainPeriodAfterMissileDeath;
+float4 _MatrixView2;
+float3 _CamPos;
+int _FrameCount;
+
+#include "math.cginc"
+#define TRAIL_POS	float3(0, 0, -0.4)
+#define STEP_TIME	0.033333333			// period for progressing its index.
+#define SPEED		32.0
+
+#define THREAD_X    512
+#define THREAD_Y    1
+#define THREAD_Z    1
+#define MISSILE_NUM  ( THREAD_X*16 )   // MISSILE_NUM must be more than THREAD_X*2
+
+float get_random(float r){
+	return frac(sin(dot(float2(r, _CurrentTime) ,float2(12.9898,78.233))) * 43758.5453);
+}
+
+[numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
+void missile_update(uint3 id : SV_DispatchThreadID)
+{
+	uint thread_idx = id.z*(THREAD_X*THREAD_Y) + id.y*(THREAD_X) + id.x;
+
+	int target_id = cbuffer_missile[thread_idx].target_id_;
+	float elapsed_time = _CurrentTime - cbuffer_missile[thread_idx].spawn_time_;
+	float missile_dead_time = _CurrentTime - cbuffer_missile[thread_idx].dead_time_;
+	float target_dead_time = target_id < 0 ? 1 : _CurrentTime - cbuffer_target[target_id].dead_time_;
+	float acceleration_effect = step(target_dead_time, 0);
+	float random_value = cbuffer_missile[thread_idx].random_value_;
+
+	// rotation spring torque
+	float3 diff = target_id < 0 ? float3(0, 0, 0) : cbuffer_target[target_id].position_ - cbuffer_missile[thread_idx].position_;
+	float4 target_rot = get_look_rotation(diff);
+	float4 missile_rot = cbuffer_missile[thread_idx].rotation_;
+	float4 q = mul_quaternion(target_rot, inverse_quaternion(missile_rot));
+	q = q.w < 0 ? -q : q;
+	float level = (2 + random_value*2) * acceleration_effect;	// spring ratio
+	float3 torque = q.xyz * level;
+	// 乱数揺らぎ。最初の１秒は無効
+	{
+		float r = get_random(random_value);
+		torque += step(r, (step(1, elapsed_time)*0.2)*_DT) * float3(get_random(r)-0.5,
+																	get_random(r+1)-0.5,
+																	get_random(r+2)-0.5) * 100;
+	}
+
+	// // position - update
+	float speed = SPEED * (0.5 + step(0.5+random_value*0.25, elapsed_time)*0.5) * (step(missile_dead_time, 0));
+	float3 vel = mul_quaternion_z(missile_rot, speed);
+	float3 pos = cbuffer_missile[thread_idx].position_ + vel * _DT;
+	cbuffer_missile[thread_idx].position_ = pos;
+
+	// rotation - torque
+	cbuffer_missile[thread_idx].omega_ += torque * (_DT * acceleration_effect);
+
+	// rotation - damper
+	const float R_DAMPER = 2;
+	cbuffer_missile[thread_idx].omega_ *= (1 - R_DAMPER*_DT);
+
+	// rotation - update
+	float3 n = cbuffer_missile[thread_idx].omega_ * _DT;
+	float len2 = dot(n, n);		// sin^2
+	float nw = sqrt(1 - len2); // (sin^2 + cos^2) = 1
+	float4 rot = mul_quaternion(float4(n, nw), missile_rot);
+	rot = normalize_quaternion(rot);
+	cbuffer_missile[thread_idx].rotation_ = rot;
+
+	// check condition
+	{		
+		int cond = 0;
+		cond |= (_MissileAlivePeriod+random_value < elapsed_time) ? 1 : 0; // automatically dead.
+		float sqrdiff = dot(diff, diff);
+		cond |= target_id < 0 ? 0 : ((sqrdiff < cbuffer_target[target_id].sqr_radius_) ? 2 : 0); // hit to the enemey
+		cond |= (_MissileAlivePeriodAfterTargetDeath-(random_value*0.5) < target_dead_time) ? 4 : 0; // timeout
+
+		float3 diff = _CamPos - pos;
+		float vol = 1.0 - (dot(diff, diff) / 10000.0);
+		vol = min(1, max(0, vol)) * 255.0;
+		int odd_frame = _FrameCount & 1;
+		cbuffer_missile_result[thread_idx+odd_frame*MISSILE_NUM] = target_id < 0 ? 0 : ((_FrameCount&0xff)<<24 | (target_id<<16) | ((int)vol << 8) | cond);
+
+		float current_dead_time = cbuffer_missile[thread_idx].dead_time_;
+		cbuffer_missile[thread_idx].dead_time_ = (missile_dead_time < 0 && cond > 0) ? _CurrentTime : current_dead_time;
+	}
+
+	// trail
+	float3 trail_pos = pos + mul_quaternion(rot, TRAIL_POS);
+	int trail_idx = cbuffer_trail_index[thread_idx];
+	int prev_trail_idx = (trail_idx - 1 + TRAIL_LENGTH) & (TRAIL_LENGTH-1);
+	float stored_time = cbuffer_trail[thread_idx*TRAIL_LENGTH + prev_trail_idx].w;
+	int next_trail_idx = (trail_idx + ((_CurrentTime - stored_time) > STEP_TIME ? 1 : 0)+TRAIL_LENGTH) & (TRAIL_LENGTH-1);
+	cbuffer_trail[thread_idx*TRAIL_LENGTH + next_trail_idx] = float4(trail_pos, _CurrentTime);
+	cbuffer_trail_index[thread_idx] = next_trail_idx;
+
+	// sort key
+	{
+		float3 bound_min = pos.xyz;
+		float3 bound_max = pos.xyz;
+		{
+			int trail_idx = thread_idx*TRAIL_LENGTH;
+			// [unroll] // ここをunrollするとiOSで動かない。おそらくコードサイズの上限を越えてしまうため
+			for (int i = 0; i < TRAIL_LENGTH; ++i) {
+				float3 tpos = cbuffer_trail[trail_idx + i].xyz;
+				bound_min = min(bound_min, tpos);
+				bound_max = max(bound_max, tpos);
+			}
+		}
+		int inside = 1;
+		{
+			[unroll]
+			for (int i = 0; i < 6; ++i) {
+				float3 plane_normal = cbuffer_frustum_planes[i].xyz;
+				float3 v = max(bound_min * plane_normal, bound_max * plane_normal);
+				float d = v.x + v.y + v.z + cbuffer_frustum_planes[i].w;
+				inside &= d > 0;
+			}
+		}
+
+		float vmax = dot(_MatrixView2, float4(pos, 1));
+		int key = (inside == 0 || missile_dead_time > _TrailRemainPeriodAfterMissileDeath) ? 0x7fff : (int)(-vmax+1024);
+		int p = ((key&0xffff)<<16) | thread_idx;
+		cbuffer_missile_sort_key_list[thread_idx].packed_ = p;
+	}
+}

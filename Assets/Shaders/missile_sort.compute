@@ -1,0 +1,36 @@
+// refered to:
+// https://shobomaru.wordpress.com/2012/11/27/parallel-processing-of-bitonic-sort/
+//
+#pragma kernel missile_sort
+
+#include "missile.cginc"
+
+RWStructuredBuffer<SortData> cbuffer_missile_sort_key_list;
+
+#define THREAD_X    512
+#define THREAD_Y    1
+#define THREAD_Z    1
+#define MISSILE_NUM  ( THREAD_X*16 )   // must be more than THREAD_X*2
+
+[numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
+void missile_sort(uint gidx : SV_GroupIndex)
+{
+    for (uint block = 2; block <= MISSILE_NUM; block <<= 1) { // major step
+        for (uint step = block >> 1; step > 0; step >>= 1) { // minor step
+			uint maskL = (uint)step - 1;
+			uint maskH = 0xFFFFFFFF ^ maskL;
+            for (uint i = gidx; i < MISSILE_NUM >> 1; i += THREAD_X) {
+				uint idx = ((i&maskH)<<1) | (i&maskL);
+				SortData v1 = cbuffer_missile_sort_key_list[idx];
+				SortData v2 = cbuffer_missile_sort_key_list[idx + step];
+				int isAscend = (idx&block) != 0 ? 1 : 0;
+				int isBigger = (v1.packed_>>16) > (v2.packed_>>16) ? 1 : 0;
+				if (isAscend ^ isBigger) {
+					cbuffer_missile_sort_key_list[idx] = v2;
+					cbuffer_missile_sort_key_list[idx+step] = v1;
+				}
+            }
+			DeviceMemoryBarrierWithGroupSync();
+        }
+     }
+}

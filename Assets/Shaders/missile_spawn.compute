@@ -1,0 +1,40 @@
+﻿#pragma kernel missile_spawn
+
+#include "constant_values.cginc"
+#include "missile.cginc"
+
+StructuredBuffer<SpawnData> cbuffer_spawn;
+RWStructuredBuffer<MissileData> cbuffer_missile;
+RWStructuredBuffer<float4> cbuffer_trail;
+RWStructuredBuffer<int> cbuffer_trail_index;
+float _CurrentTime;
+
+#define THREAD_X    32
+#define THREAD_Y    1
+#define THREAD_Z    1
+
+[numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
+void missile_spawn(uint3 id : SV_DispatchThreadID)
+{
+	uint thread_idx = id.z*(THREAD_X*THREAD_Y) + id.y*(THREAD_X) + id.x;
+	if (cbuffer_spawn[thread_idx].valid_ != 0) {
+		float random = cbuffer_spawn[thread_idx].random_value_;
+		float random_second = cbuffer_spawn[thread_idx].random_value_second_;
+		int idx = cbuffer_spawn[thread_idx].missile_id_;
+		cbuffer_missile[idx].position_ = cbuffer_spawn[thread_idx].position_;
+		cbuffer_missile[idx].spawn_time_ = _CurrentTime;
+		cbuffer_missile[idx].omega_ = float3(random-0.5, random_second-0.5, 0);
+		cbuffer_missile[idx].dead_time_ = FLOAT_MAX;
+		cbuffer_missile[idx].rotation_ = cbuffer_spawn[thread_idx].rotation_;
+		cbuffer_missile[idx].target_id_ = cbuffer_spawn[thread_idx].target_id_;
+		cbuffer_missile[idx].random_value_ = random;
+		[unroll]
+		for (int i = 0; i < TRAIL_LENGTH; ++i) {
+			int i0 = idx*TRAIL_LENGTH+i;
+			cbuffer_trail[i0].xyz = cbuffer_spawn[thread_idx].position_;
+			cbuffer_trail[i0].w = _CurrentTime;
+		}
+		cbuffer_trail_index[idx] = 0;
+	}
+}
+
