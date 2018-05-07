@@ -906,7 +906,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 9
+  m_RootOrder: 8
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1031810513
 GameObject:
@@ -956,52 +956,8 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 7
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1096296655
-GameObject:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  serializedVersion: 5
-  m_Component:
-  - component: {fileID: 1096296656}
-  - component: {fileID: 1096296657}
-  m_Layer: 0
-  m_Name: recorder
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1096296656
-Transform:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  m_GameObject: {fileID: 1096296655}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_Children: []
-  m_Father: {fileID: 0}
   m_RootOrder: 6
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1096296657
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  m_GameObject: {fileID: 1096296655}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bcf721a50b4cf4210a6bd5a18c2a774e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  screenCaptureKeys: 
-  keyModifiers: 
-  isRecording: 0
-  endFrameno: 7200
 --- !u!1 &1116439822
 GameObject:
   m_ObjectHideFlags: 0
@@ -1600,7 +1556,7 @@ RectTransform:
   - {fileID: 597826418}
   - {fileID: 1340902463}
   m_Father: {fileID: 0}
-  m_RootOrder: 8
+  m_RootOrder: 7
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -1651,7 +1607,6 @@ MonoBehaviour:
     type: 2}
   se_explosion_: {fileID: 8300000, guid: a5f6f09ee30aa4b96bd627e943694fa5, type: 3}
   se_laser_: {fileID: 8300000, guid: 29942fdf707f74367ae98f987852fe14, type: 3}
-  bgm01_: {fileID: 8300000, guid: dc57e9a215ffb46a180d41050b2a3213, type: 3}
 --- !u!4 &2090417139
 Transform:
   m_ObjectHideFlags: 0
